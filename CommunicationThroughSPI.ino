@@ -33,8 +33,9 @@ int readRegister(byte address) {
   byte command = 0x20 + (address & 0x1F);  // RREG is 20h + rrh where rrh is a 5-bit register adress
 //  byte command = 0x20 + address ;
   digitalWrite(nCS,LOW);                                   
-  SPI.transfer(command);
-  int value = SPI.transfer(0x00);
+  SPI.transfer(command);                // BYTE 1 (DIN : 0x20 + 5-bit register address, DOUT : 0xFF         )
+  SPI.transfer(0xFF);                   // BYTE 2 (DIN : Arbitary,                      DOUT : Echo byte 1  )
+  int value = SPI.transfer(0x00);       // BYTE 3 (DIN : 0x00,                          DOUT : Register data)
   digitalWrite(nCS,HIGH);
 //  Serial.print("READ -> REGISTER VALUE :");
 //  Serial.println(value);
@@ -50,8 +51,8 @@ void writeRegister(byte address, int value) {
   byte command = 0x40 + address ;
   Serial.print("WREG : ") ;
   Serial.println(command) ;
-  SPI.transfer(command);
-  SPI.transfer(value);
+  SPI.transfer(command);                // BYTE 1 (DIN : 0x40 + 5-bit register address, DOUT : 0xFF       )
+  SPI.transfer(value);                  // BYTE 2 (DIN : Register data,                 DOUT : Echo byte 1)
   digitalWrite(nCS,HIGH);
 }
 
@@ -59,7 +60,7 @@ void writeRegister(byte address, int value) {
 void setup() {
 
   Serial.begin(CLK);
-  initArduinoNano() ;
+  initArduinoNano();
 
   SPI.begin() ;               // Initialize the SPI library
   SPI.beginTransaction(SPISettings(8000000,MSBFIRST,SPI_MODE1));
@@ -167,11 +168,7 @@ void setup() {
 void loop() {
   
   // ADC CONVERSION
-  writeRegister(0b01100,0x40);
-  int toto = readRegister(0b01100);
-  Serial.print("REG VALUE : ");
-  Serial.println(toto);
-  
+
   digitalWrite(nCS,LOW);
   digitalWrite(START,HIGH);   // Start or restart a new ADC conversion
   
@@ -180,10 +177,16 @@ void loop() {
   }
   Serial.println("Data is now ready !");
   
-  SPI.transfer(0x12) ;                                      // Command for RDATA
-  for (int index=0 ; index < 3 ; index++) {                 // Lecture en 3 octets car registre 24 bits
-    ADC_VALUE = (ADC_VALUE << 8 | SPI.transfer(0x00));      // À chaque itération, le contenu de ADC_VALUE, envoyé par SPI, est décallé de 8 bits vers la gauche 
+  SPI.transfer(0x12);                                         // BYTE 1 (DIN : 0x12, DOUT : 0xFF           )
+  SPI.transfer(0xFF);                                         // BYTE 2 (DIN : Arbitary, DOUT : Echo byte 1)
+  for (int index=0 ; index < 2 ; index++) {                   // Lecture en 3 octets car registre 24 bits
+    ADC_VALUE = (ADC_VALUE << 8 | SPI.transfer(0x00));        // À chaque itération, le contenu de ADC_VALUE, envoyé par SPI, est décallé de 8 bits vers la gauche 
   }
+  
+//  dataMSB = SPI.transfer(0x00);                               // BYTE 3 (DIN : 0x00, DOUT : MSB data       )
+//  dataMID = SPI.transfer(0x00);                               // BYTE 4 (DIN : 0x00, DOUT : MID data       )
+//  dataLSB = SPI.transfer(0x00);                               // BYTE 5 (DIN : 0x00, DOUT : LSB data       )
+  
   digitalWrite(START,LOW);   // Start or restart a new ADC conversion
   digitalWrite(nCS,HIGH);
   
