@@ -193,6 +193,6 @@ void loop() {
   Serial.print("ADC VALUE : ");
   Serial.println(ADC_VALUE);
   
-  delay(1000);
+  delay(0);
   
 }
