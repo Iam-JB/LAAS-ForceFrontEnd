@@ -60,6 +60,7 @@ void writeRegister(byte address, int value) {
 void setup() {
 
   Serial.begin(CLK);
+  while(!Serial) ;            // Wait for serial connexion
   initArduinoNano();
 
   SPI.begin() ;               // Initialize the SPI library
