@@ -1,17 +1,17 @@
 // For televersing the arduino code on the card
 //    --> In order to solve the ttyACM0 probelm, you have to double-click the arduino reset button and then it goes fine
 
-
-// I am currently blocked at the isTransferDone
+// I am currently blocked at the isTransferDone function
 // @TO DO Check what SERCOM is necessary for implementing SPI on the Arduino Nano 33 IoT
 //        Learn more about the Direct Access Memory (DMA)
+
 
 #include <SPI.h>
 #include <Adafruit_ZeroDMA.h>
 #include "utility/dma.h"
-//#include "wiring_private.h" // pinPeripheral() function
+#include "wiring_private.h" // pinPeripheral() function
 
-#define nCS 10      // Chip Select
+#define nCS 8       // Chip Select
 #define MOSI 11     // Master To Slave
 #define MISO 12     // Slave To Master
 #define SCLK 13     // Serial Clock
@@ -21,14 +21,23 @@
 #define nPWDN 16
 #define nRESET 17
 
+SPIClassSAMD mySPI(
+  &sercom1,
+  12,
+  13,
+  11,
+  SPI_PAD_0_SCK_1,
+  SERCOM_RX_PAD_3
+);
+
 // MY VARIABLES
 
 long ADC_VALUE;
-long CLK = 7372800;    // 7.3728 MHz
+long CLK = 7372800;      // 7.3728 MHz
 
 Adafruit_ZeroDMA myDMA;
-ZeroDMAstatus    stat; // DMA status codes returned by some functions
-DmacDescriptor *desc;  // DMA descriptor address
+ZeroDMAstatus    stat;   // DMA status codes returned by some functions
+DmacDescriptor *desc;    // DMA descriptor address
 
 #define DATA_LENGTH 3
 uint8_t receiveBuffer[DATA_LENGTH];
@@ -36,24 +45,30 @@ volatile bool isTransferDone = false;
 
 // Callback for end of DMA transfer
 void dmaCallback(Adafruit_ZeroDMA *dma) {
-  (void) dma;
+  (void) dma ;
   isTransferDone = true ;
   Serial.println("CALLBACK");
 }
 
 // Interrupt Service Routine for nDRDY
 void nDRDY_ISR() {
-  Serial.println("DR HANDLER");
-  Serial.println("DATA IS RDY");
-  
+  Serial.println("ENTRERING DATA READY HANDLER");
+
   digitalWrite(nCS, LOW);
+  
+  while (!isTransferDone) {                  // I am blocked here !! The callback function is never called
+    
+    if (myDMA.isActive()) {
+      Serial.println("DR HANDLER : The transfer is still being processed...");
+    } else {
+      Serial.println("DR HANDLER : The transfer isn't in processing mode");
+    }
 
-  myDMA.changeDescriptor(
-    desc
-  );
-
-  while (!isTransferDone);                  // I am blocked here !! The callback function is never called
-  Serial.println("TRANSFER IS DONE");
+    // print the register in order to know if it is my configuration that isn't good or smthing else
+    
+    delay(1000000);
+  }
+  Serial.println("DR HANDLER : The transfer is finally finished !");
 
   // Process received data
   ADC_VALUE = 0;
@@ -63,13 +78,25 @@ void nDRDY_ISR() {
 
   Serial.print("ADC VALUE: ");
   Serial.println(ADC_VALUE);
-  
+
   isTransferDone = false;
+
+  stat = myDMA.free();
+  if (stat != DMA_STATUS_OK) {
+    Serial.println("DMA free has failed");
+  }
+
+  stat = myDMA.allocate();
+  if (stat != DMA_STATUS_OK) {
+    Serial.println("DMA allocate has failed");
+    myDMA.printStatus(stat);
+  }
+  
   stat = myDMA.startJob();
   if (stat != DMA_STATUS_OK) {
     Serial.println("DMA start has failed");
+    myDMA.printStatus(stat);
   }
-  myDMA.printStatus(stat);
   
   digitalWrite(START, HIGH);                // Start or restart a new ADC conversion
   digitalWrite(nCS, HIGH);
@@ -79,27 +106,26 @@ void nDRDY_ISR() {
 // MY FUNCTIONS
 
 void initArduinoNano() {
-  pinMode(nCS, OUTPUT);
-  pinMode(MOSI, OUTPUT);
-  pinMode(MISO, INPUT);
-  pinMode(SCLK, OUTPUT);
-  pinMode(START, OUTPUT);
+  pinMode(nCS,    OUTPUT);
+  pinMode(MOSI,   OUTPUT);
+  pinMode(MISO,   INPUT );
+  pinMode(SCLK,   OUTPUT);
+  pinMode(START,  OUTPUT);
   pinMode(nRESET, OUTPUT);
-  pinMode(nPWDN, OUTPUT);
-  pinMode(nDRDY, INPUT);
+  pinMode(nPWDN,  OUTPUT);
+  pinMode(nDRDY,  INPUT );
 
-//  pinPeripheral(nCS, PIO_SERCOM);
-//  pinPeripheral(MOSI, PIO_SERCOM);
-//  pinPeripheral(MISO, PIO_SERCOM);
-//  pinPeripheral(SCLK, PIO_SERCOM);
+  pinPeripheral(MOSI, PIO_SERCOM);
+  pinPeripheral(MISO, PIO_SERCOM);
+  pinPeripheral(SCLK, PIO_SERCOM);
 }
 
 int readRegister(byte address) {
   byte command = 0x20 + (address & 0x1F);  // RREG is 20h + rrh where rrh is a 5-bit register address
   digitalWrite(nCS, LOW);                                   
-  SPI.transfer(command);                   // BYTE 1 (DIN : 0x20 + 5-bit register address, DOUT : 0xFF)
-  SPI.transfer(0xFF);                      // BYTE 2 (DIN : Arbitary, DOUT : Echo byte 1)
-  int value = SPI.transfer(0x00);          // BYTE 3 (DIN : 0x00, DOUT : Register data)
+  mySPI.transfer(command);                   // BYTE 1 (DIN : 0x20 + 5-bit register address, DOUT : 0xFF)
+  mySPI.transfer(0xFF);                      // BYTE 2 (DIN : Arbitary, DOUT : Echo byte 1)
+  int value = mySPI.transfer(0x00);          // BYTE 3 (DIN : 0x00, DOUT : Register data)
   digitalWrite(nCS, HIGH);
   return value;
 }
@@ -107,8 +133,8 @@ int readRegister(byte address) {
 void writeRegister(byte address, int value) {
   digitalWrite(nCS, LOW);  
   byte command = 0x40 + address;
-  SPI.transfer(command);                // BYTE 1 (DIN : 0x40 + 5-bit register address, DOUT : 0xFF)
-  SPI.transfer(value);                  // BYTE 2 (DIN : Register data, DOUT : Echo byte 1)
+  mySPI.transfer(command);                // BYTE 1 (DIN : 0x40 + 5-bit register address, DOUT : 0xFF)
+  mySPI.transfer(value);                  // BYTE 2 (DIN : Register data, DOUT : Echo byte 1)
   digitalWrite(nCS, HIGH);
 }
 
@@ -118,8 +144,8 @@ void setup() {
   Serial.println("HELLO WORLD");
   initArduinoNano();
 
-  SPI.begin(); // Initialize the SPI library
-  SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE1));
+  mySPI.begin(); // Initialize the SPI library
+  mySPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE1));
 
   digitalWrite(nCS, HIGH); // Communication disable
   digitalWrite(nRESET, HIGH);
@@ -178,13 +204,20 @@ void setup() {
     myDMA.printStatus(stat);
   }
 
-    // DMA Configuration for SERCOM4 (SPI)      // SERCOM4 is the 'native' SPI SERCOM on most M0 boards
-  
-  myDMA.setTrigger(SERCOM4_DMAC_ID_RX);       // To receive from SPI
+    // DMA Configuration for SPI    
+             
+        // SERCOM4 is the 'native' SPI SERCOM on most M0 boards but section 6. mentions that according to the Arduino pinout,
+        // the SERCOM that corresponds is the SERCOM1
+        
+  myDMA.setTrigger(SERCOM1_DMAC_ID_RX);       // To receive from SPI
+  Serial.print("TRIGGER bit : ");
+  Serial.println(DMAC->CHCTRLB.bit.TRIGSRC);
   myDMA.setAction(DMA_TRIGGER_ACTON_BEAT);
+  Serial.print("ACT ON bit : ");
+  Serial.println(DMAC->CHCTRLB.bit.TRIGACT);
 
   desc = myDMA.addDescriptor(
-    (void *)(&SERCOM4->SPI.DATA.reg),   // SRC
+    (void *)(&SERCOM1->SPI.DATA.reg),   // SRC
     receiveBuffer,                      // DEST
     DATA_LENGTH,                        // length
     DMA_BEAT_SIZE_BYTE,                 // bytes
@@ -198,10 +231,11 @@ void setup() {
 //  }
 
   myDMA.loop(false);
-  myDMA.setCallback(dmaCallback,DMA_CALLBACK_TRANSFER_DONE);   // The second argument is not especially necessary here as it is set by default
-
+  myDMA.setCallback(dmaCallback, DMA_CALLBACK_TRANSFER_DONE);            // The second argument (DMA_CALLBACK_TRANSFER_DONE) is not especially necessary here as it is set by default
+  myDMA.setPriority(DMA_PRIORITY_3);         // Set the highest to DMA
+ 
     // Enable global interrupts
-  NVIC_SetPriority(DMAC_IRQn, 0);           // Set the Nested Vector Interrupt Controller (NVIC) priority for the DMAC to 0 (highest) 
+  NVIC_SetPriority(DMAC_IRQn, 10);           // Set the Nested Vector Interrupt Controller (NVIC) priority for the DMAC to 0 (highest) 
   NVIC_EnableIRQ(DMAC_IRQn);
   
     // Attach interrupt to nDRDY pin
@@ -220,5 +254,15 @@ void setup() {
 
 void loop() {
   // Nothing here, done by IT
+  
   Serial.println(".");
+  
+//  Serial.print("enable bit : ");
+//  Serial.println(DMAC->CHCTRLA.bit.ENABLE);
+//
+//  Serial.print("Transfer Complete bit : ");
+//  Serial.println(DMAC->CHINTFLAG.reg);
+//
+//  Serial.print("Chanel causing IT : ");
+//  Serial.println(DMAC->INTPEND.bit.ID);
 }
