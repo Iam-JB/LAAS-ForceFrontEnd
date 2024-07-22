@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
 #Jean-Baptiste CAZAUX - Tuesday 16 July
-#https://github.com/...
+#https://github.com/Iam-JB/LAAS-ForceFrontEnd
 
 print ("Hello Gepetto Team !")
+
+# Run program as root in order to access all peripherals
 
 ############################################################################################
 #                                                                                          #
@@ -11,10 +13,11 @@ print ("Hello Gepetto Team !")
 #                                                                                          #
 ############################################################################################
 
-import spidev
+import spidev     # Does spidev supports DMA ? Not sure about it...
 import RPi.GPIO as GPIO
 import time
-import math
+from math import *
+from bcm2835 import *
 
 ############################################################################################
 #                                                                                          #
@@ -25,19 +28,14 @@ import math
 # GPIOs DEFINITION
                 # RPi pinout available there :
 nCS = 25		# https://github.com/thomasfla/odri-spi-rpi
-MOSI = 10
-MISO = 9
-SCLK = 11     
+#MOSI = 10
+#MISO = 9
+#SCLK = 11     
 
 START = 17
 nDRDY = 27
 nPWDN = 22
 nRESET = 26
-
-# MY PARAMETERS
-
-ADC_VALUE = 0
-CLK = 7372800	 	# 7.3728 MHz
 
 
 ############################################################################################
@@ -59,36 +57,41 @@ def initRaspPI():
    GPIO.setup(nPWDN,GPIO.OUT)
    GPIO.setup(nDRDY,GPIO.IN)
 
-   GPIO.add_event_detect(nDRDY, GPIO.FALLING,
-		                 callback=myCallback,
-		 	             bouncetime = 50)
+   GPIO.add_event_detect(nDRDY,
+                         GPIO.FALLING,
+		                 callback=myCallback)
+                         # bouncetime = ?
 
-#   spi.open(0,0)
-#   spi.max_speed_hz = CLK
-#   spi.mode = 0b01
+   if not bcm2835_init():
+       print ("BCM2835 : Initialisation failed")
+   if not bcm2835_spi_begin():
+       print ("BCM2835 : Begin failed")
+
+   bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST)
+   bcm2835_spi_setDataMode(BCM2835_SPI_MODE1)
+   bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_1024)
+   bcm2835_spi_chipSelect(BCM2835_SPI_CS_NONE)
 
    print ("Initialisation has been successfully done !")
 
 # READ ADS1235Q1's REGISTERS
-     # @TODO check if the shift works, otherwise assign the command value manually
 
 def readRegister(address):
    command = 0x20 + (address & 0x1F)	# RREG is a 0x20 + rrh where rrh is a 5-bit register
    GPIO.output(nCS,GPIO.LOW)
-   spi.xfer2([command])
-   spi.xfer2([0xFF])
-   value = spi.xfer2([0x00])
+   bcm2835_spi_transfer(command)
+   bcm2835_spi_transfer(0xFF)
+   value = bcm2835_spi_transfer(0x00)
    GPIO.output(nCS,GPIO.HIGH)
    return value
 
 # WRITE ADS1235Q1's REGISTERS
-     # @TODO check if the shift works, otherwise assign the command value manually
 
 def writeRegister(address,value):
    GPIO.output(nCS,GPIO.LOW)
-   command = 0x40 + (address)	# WREG is a 0x40 + rrh where rrh is a 5-bit register
-   spi.xfer2([command])
-   spi.xfer2([value])
+   command = 0x40 + (address & 0x1F)	# WREG is a 0x40 + rrh where rrh is a 5-bit register
+   bcm2835_spi_transfer(command)
+   bcm2835_spi_transfer(value)
    GPIO.output(nCS,GPIO.HIGH)
 
 def setup():
@@ -103,12 +106,12 @@ def setup():
    GPIO.output(nPWDN,GPIO.HIGH)
 
    # DATA RATE CONFIGURATION
-   addressDR = 0b0010
+   addressDR = 0b00010
 #   valueDR = readRegister(addressDR)
    valueDR = 0b01100100			# 7200 SPS
    writeRegister(addressDR,valueDR)
 
-   readRegister(addressDR)								
+   readRegister(addressDR)
 
    # PGA CONFIURATION
    addressPGA = 0b10000
@@ -146,10 +149,14 @@ def setup():
 
 # IT triggered on nDRDY has been configured through 'add_event_detect' in initRaspPI() function
 
+global targetTimeSPI
+targetTimeSPI = 0.000138
+
 def myCallback(channel):
 #   print ("ENTERING THE CALLBACK")
    
-   global ADC_VALUE
+#   global ADC_VALUE
+#   targetTimeSPI = 0.000138   # T = 1/7200
 
    GPIO.output(START,GPIO.LOW)
    GPIO.output(nCS,GPIO.LOW)
@@ -157,31 +164,39 @@ def myCallback(channel):
 #   print ("Data is now ready !")
    ADC_VALUE = 0
    
-   spi.xfer2([0x12])
-   spi.xfer2([0xFF])
-
-   data = spi.xfer2([0x00,0x00,0x00])
+   startTimeSPI = time.time()
+   
+   bcm2835_spi_transfer(0x12)
+   bcm2835_spi_transfer(0xFF)
+   
+   MSB = bcm2835_spi_transfer(0x00)
+   MIDSB = bcm2835_spi_transfer(0x00)
+   LSB = bcm2835_spi_transfer(0x00)
+   
+   stopTimeSPI = time.time()
+   
+   data = [MSB,MIDSB,LSB]
+   
    for byte in data:
       ADC_VALUE = (ADC_VALUE << 8) | byte
 
-   ADC_VALUE = ADC_VALUE - 16747210
-#   print(ADC_VALUE)
-   print(time.process_time(),ADC_VALUE)	# check values returned by the time counter
+   ADC_VALUE = ADC_VALUE - 16747360     # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
+                                        #       where does that come from ??
+   realTimeSPI = stopTimeSPI - startTimeSPI
+   
+#   print("TARGET TIME",targetTimeSPI)
+   
+#    if (realTimeSPI <= targetTimeSPI):
+#       print("The SPI conversion time is respected")
+#       return
+#    if (realTimeSPI > targetTimeSPI):
+#       print("The SPI conversion time isn't respected")
+#   print(realTimeSPI)
+   print(ADC_VALUE)
+
    GPIO.output(nCS,GPIO.HIGH)
 
    GPIO.output(START,GPIO.HIGH)         # start a new data conversion
-
-
-############################################################################################
-#                                                                                          #
-#                                           DMA                                            #
-#                                                                                          #
-############################################################################################
-
-
-
-
-
 
 
 ############################################################################################
@@ -194,13 +209,6 @@ print ("START OF THE MAIN TASK")
 
 GPIO.setwarnings(False)
 
-spi = spidev.SpiDev()
-spi.open(0,0)			# /dev/spidev0.0
-spi.max_speed_hz = CLK 
-spi.mode = 1
-spi.no_cs = True        # MY OWN CHIP SELECT
-spi.lsbfirst = False    # MSB FIRST
-
 setup() 
 GPIO.output(START,GPIO.HIGH)	# start the first conversion
 
@@ -210,7 +218,7 @@ try :
       time.sleep(0)
          
 except KeyboardInterrupt:
-   spi.close()
+   bcm2835_spi_end()
+   bcm2835_close()
    GPIO.cleanup()
    
-
