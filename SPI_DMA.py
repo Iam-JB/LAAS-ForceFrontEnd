@@ -18,6 +18,9 @@ import RPi.GPIO as GPIO
 import time
 from math import *
 from bcm2835 import *
+import numpy as np
+import zmq
+import json
 
 ############################################################################################
 #                                                                                          #
@@ -140,7 +143,7 @@ def setup():
    writeRegister(0x0B,0x00)
    writeRegister(0x0C,0x40)
 
-
+   print("setup is done !")
 ############################################################################################
 #                                                                                          #
 #                                           IT                                             #
@@ -151,6 +154,8 @@ def setup():
 
 global targetTimeSPI
 targetTimeSPI = 0.000138
+
+index = 0
 
 def myCallback(channel):
 #   print ("ENTERING THE CALLBACK")
@@ -180,8 +185,11 @@ def myCallback(channel):
    for byte in data:
       ADC_VALUE = (ADC_VALUE << 8) | byte
 
-   ADC_VALUE = ADC_VALUE - 16747360     # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
-                                        #       where does that come from ??
+   if (ADC_VALUE >= -1000):
+      ADC_VALUE = ADC_VALUE - 16747360     # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
+   if (ADC_VALUE < -1000):                  #       where does that come from ??
+      ADC_VALUE = ADC_VALUE + 16776283
+   
    realTimeSPI = stopTimeSPI - startTimeSPI
    
 #   print("TARGET TIME",targetTimeSPI)
@@ -192,7 +200,23 @@ def myCallback(channel):
 #    if (realTimeSPI > targetTimeSPI):
 #       print("The SPI conversion time isn't respected")
 #   print(realTimeSPI)
+
+#    global index
+#    index = index + 1
+#    if (index==10):
+#       print(ADC_VALUE)   # in order to have a real-time response
+#       index = 0
+
    print(ADC_VALUE)
+
+   # ZeroMQ INITIALISATION
+   context = zmq.Context()
+   socket = context.socket(zmq.PUB)
+   socket.bind("tcp://*:9872")
+    
+    # Sending data to PlotJuggler
+   message = {"ADC VALUE " : ADC_VALUE}
+   socket.send_string(json.dumps(message))   
 
    GPIO.output(nCS,GPIO.HIGH)
 
