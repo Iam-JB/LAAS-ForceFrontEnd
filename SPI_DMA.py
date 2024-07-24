@@ -157,6 +157,11 @@ targetTimeSPI = 0.000138
 
 index = 0
 
+   # ZeroMQ INITIALISATION
+context = zmq.Context()
+socket = context.socket(zmq.PUB)
+socket.bind("tcp://*:9872")
+
 def myCallback(channel):
 #   print ("ENTERING THE CALLBACK")
    
@@ -207,12 +212,7 @@ def myCallback(channel):
 #       print(ADC_VALUE)   # in order to have a real-time response
 #       index = 0
 
-   print(ADC_VALUE)
-
-   # ZeroMQ INITIALISATION
-   context = zmq.Context()
-   socket = context.socket(zmq.PUB)
-   socket.bind("tcp://*:9872")
+   print(ADC_VALUE)   # Not usefull here as it is send to PlotJuggler for better high speed data vialization
     
     # Sending data to PlotJuggler
    message = {"ADC VALUE " : ADC_VALUE}
