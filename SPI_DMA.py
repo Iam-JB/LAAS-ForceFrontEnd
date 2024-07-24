@@ -212,7 +212,8 @@ def myCallback(channel):
 #       print(ADC_VALUE)   # in order to have a real-time response
 #       index = 0
 
-   print(ADC_VALUE)   # Not usefull here as it is send to PlotJuggler for better high speed data vialization
+#   print(ADC_VALUE)   # Not usefull here as it is send to PlotJuggler for better high speed data vialization
+                       # AND IT IS GOING TO SLOW DOWN PLOTJUGGLER VISUALISATION
     
     # Sending data to PlotJuggler
    message = {"ADC VALUE " : ADC_VALUE}
