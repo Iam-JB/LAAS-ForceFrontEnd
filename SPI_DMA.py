@@ -190,21 +190,23 @@ def myCallback(channel):
    for byte in data:
       ADC_VALUE = (ADC_VALUE << 8) | byte
 
-   if (ADC_VALUE >= -1000):
-      ADC_VALUE = ADC_VALUE - 16747360     # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
-   if (ADC_VALUE < -1000):                  #       where does that come from ??
-      ADC_VALUE = ADC_VALUE + 16776283
-   
+   # CALIBRATION : 100g i.e 0.981N corresponds to an adc code of 3150
+   if (ADC_VALUE >= 10000000 and ADC_VALUE <= 16778000):
+       ADC_VALUE = (ADC_VALUE - 16747800)*0.981/3150
+   else :
+       ADC_VALUE = (ADC_VALUE + 29000)*0.981/3150
+   # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
+   #       where does that come from ??
    realTimeSPI = stopTimeSPI - startTimeSPI
    
-#   print("TARGET TIME",targetTimeSPI)
-   
+#   print(realTimeSPI)
+    
 #    if (realTimeSPI <= targetTimeSPI):
 #       print("The SPI conversion time is respected")
 #       return
 #    if (realTimeSPI > targetTimeSPI):
 #       print("The SPI conversion time isn't respected")
-#   print(realTimeSPI)
+#    print(realTimeSPI)
 
 #    global index
 #    index = index + 1
