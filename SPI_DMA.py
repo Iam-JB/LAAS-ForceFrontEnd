@@ -144,6 +144,7 @@ def setup():
    writeRegister(0x0C,0x40)
 
    print("setup is done !")
+   
 ############################################################################################
 #                                                                                          #
 #                                           IT                                             #
@@ -154,13 +155,19 @@ def setup():
 
 global targetTimeSPI
 targetTimeSPI = 0.000138
+adcTab = []
+noiseTab = []
 
-index = 0
-
-   # ZeroMQ INITIALISATION
+# ZeroMQ INITIALISATION
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
+
+def myNoiseRMS(noiseTab):
+    noisePow2 = noiseTab**2
+    noiseMean = np.mean(noisePow2)
+    noiseRMS = np.sqrt(noiseMean)
+    return noiseRMS
 
 def myCallback(channel):
 #   print ("ENTERING THE CALLBACK")
@@ -197,9 +204,20 @@ def myCallback(channel):
        ADC_VALUE = (ADC_VALUE + 29000)*0.981/3150
    # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
    #       where does that come from ??
-   realTimeSPI = stopTimeSPI - startTimeSPI
    
-#   print(realTimeSPI)
+   realTimeSPI = stopTimeSPI - startTimeSPI
+    
+   adcTab.append(ADC_VALUE)
+   if (len(adcTab)>=500):              # Calculating the noise every 500 samples, is that enough ?
+       adcMean = np.mean(adcTab)
+#       print("adc mean : ",adcMean)
+       for x in adcTab :
+          noiseTab = x - adcMean
+          
+       noiseRMS = myNoiseRMS(noiseTab)
+#      print("Noise RMS : ",noiseRMS)  # Uncomment in order to check the noise RMS value
+       adcTab.clear()
+#       time.sleep(10)
     
 #    if (realTimeSPI <= targetTimeSPI):
 #       print("The SPI conversion time is respected")
@@ -207,12 +225,6 @@ def myCallback(channel):
 #    if (realTimeSPI > targetTimeSPI):
 #       print("The SPI conversion time isn't respected")
 #    print(realTimeSPI)
-
-#    global index
-#    index = index + 1
-#    if (index==10):
-#       print(ADC_VALUE)   # in order to have a real-time response
-#       index = 0
 
 #   print(ADC_VALUE)   # Not usefull here as it is send to PlotJuggler for better high speed data vialization
                        # AND IT IS GOING TO SLOW DOWN PLOTJUGGLER VISUALISATION
@@ -223,7 +235,7 @@ def myCallback(channel):
 
    GPIO.output(nCS,GPIO.HIGH)
 
-   GPIO.output(START,GPIO.HIGH)         # start a new data conversion
+   GPIO.output(START,GPIO.HIGH)     # start a new data conversion
 
 
 ############################################################################################
@@ -237,7 +249,7 @@ print ("START OF THE MAIN TASK")
 GPIO.setwarnings(False)
 
 setup() 
-GPIO.output(START,GPIO.HIGH)	# start the first conversion
+GPIO.output(START,GPIO.HIGH)        # start the first conversion
 
 try :
    while True:
