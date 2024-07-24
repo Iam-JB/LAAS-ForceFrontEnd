@@ -18,7 +18,7 @@ BCM2835_SPI_CLOCK_DIVIDER_1024 = 1024
 BCM2835_SPI_CLOCK_DIVIDER_1 = 1
 BCM2835_SPI_CS_NONE = 3                  # MY OWN CHIP SELECT
 
-# ASSIGN SIGNATURES
+# DEFINE RETURN TYPES (RESTYPE) AND ARGUMENT TYPES (ARGTYPES) OF THE FOLLOWING FUNCTIONS
 bcm2835.bcm2835_init.restype = ctypes.c_int
 bcm2835.bcm2835_spi_begin.restype = ctypes.c_int
 bcm2835.bcm2835_spi_transfer.restype = ctypes.c_uint8
