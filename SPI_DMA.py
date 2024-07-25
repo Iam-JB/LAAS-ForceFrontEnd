@@ -5,7 +5,7 @@
 
 print ("Hello Gepetto Team !")
 
-# Run program as root in order to access all peripherals
+# Run program as root in order to access all peripherals (sudo /usr/bin/thonny %F)
 
 ############################################################################################
 #                                                                                          #
@@ -19,6 +19,7 @@ import time
 from math import *
 from bcm2835 import *
 import numpy as np
+from numpy import *
 import zmq
 import json
 
@@ -72,7 +73,7 @@ def initRaspPI():
 
    bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST)
    bcm2835_spi_setDataMode(BCM2835_SPI_MODE1)
-   bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_1024)
+   bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_256)
    bcm2835_spi_chipSelect(BCM2835_SPI_CS_NONE)
 
    print ("Initialisation has been successfully done !")
@@ -156,7 +157,7 @@ def setup():
 global targetTimeSPI
 targetTimeSPI = 0.000138
 adcTab = []
-noiseTab = []
+spiTimeTab = []
 
 # ZeroMQ INITIALISATION
 context = zmq.Context()
@@ -180,12 +181,11 @@ def myCallback(channel):
 
 #   print ("Data is now ready !")
    ADC_VALUE = 0
-   
+
    startTimeSPI = time.time()
    
    bcm2835_spi_transfer(0x12)
    bcm2835_spi_transfer(0xFF)
-   
    MSB = bcm2835_spi_transfer(0x00)
    MIDSB = bcm2835_spi_transfer(0x00)
    LSB = bcm2835_spi_transfer(0x00)
@@ -204,18 +204,29 @@ def myCallback(channel):
        ADC_VALUE = (ADC_VALUE + 29000)*0.981/3150
    # @TODO when the 'normalized' adc value arrives at 30000 it crashes down to approx. -16746500
    #       where does that come from ??
-   
+
    realTimeSPI = stopTimeSPI - startTimeSPI
-    
+   spiTimeTab.append(realTimeSPI)
+   if (len(spiTimeTab)>= 5000):
+      spiTimeMean = np.mean(spiTimeTab)*1000000
+      # Sending SPI Mean Time to PlotJuggler
+      messageSPI = {"SPI Time (us) " : spiTimeMean}
+      socket.send_string(json.dumps(messageSPI))
+      spiTimeTab.clear()
+
    adcTab.append(ADC_VALUE)
-   if (len(adcTab)>=500):              # Calculating the noise every 500 samples, is that enough ?
+   if (len(adcTab)>=5000):              # Calculating the noise every 5000 samples, is that enough ?
+       noiseTab = zeros(len(adcTab),float)
        adcMean = np.mean(adcTab)
-#       print("adc mean : ",adcMean)
-       for x in adcTab :
-          noiseTab = x - adcMean
+#       print("adc tab : ",adcTab)
+       for index in range(0,len(adcTab)-1):
+          noiseTab[index] = abs(adcTab[index] - adcMean)
           
        noiseRMS = myNoiseRMS(noiseTab)
-#      print("Noise RMS : ",noiseRMS)  # Uncomment in order to check the noise RMS value
+       # Sending Noise RMS to PlotJuggler
+       messageRMS = {"NOISE RMS " : noiseRMS}
+       socket.send_string(json.dumps(messageRMS))
+   
        adcTab.clear()
 #       time.sleep(10)
     
@@ -226,12 +237,12 @@ def myCallback(channel):
 #       print("The SPI conversion time isn't respected")
 #    print(realTimeSPI)
 
-#   print(ADC_VALUE)   # Not usefull here as it is send to PlotJuggler for better high speed data vialization
+#   print(ADC_VALUE)   # Not usefull here as it is sent to PlotJuggler for better high speed data vialization
                        # AND IT IS GOING TO SLOW DOWN PLOTJUGGLER VISUALISATION
     
-    # Sending data to PlotJuggler
-   message = {"ADC VALUE " : ADC_VALUE}
-   socket.send_string(json.dumps(message))   
+   # Sending ADC data to PlotJuggler
+   messageADC = {"ADC VALUE " : ADC_VALUE}
+   socket.send_string(json.dumps(messageADC))
 
    GPIO.output(nCS,GPIO.HIGH)
 
