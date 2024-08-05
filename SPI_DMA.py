@@ -5,6 +5,10 @@
 
 print ("Hello Gepetto Team !\n")
 
+print("Please visualize all data in Plot Juggler with the following ZMQ SUB configuration :\n")
+print("   Transport     Address     Port   |  Message Protocol")
+print("    tcp://      localhost    9872   |        json    \n")
+
 # Run program as root in order to access all peripherals (sudo /usr/bin/thonny %F)
  
 ############################################################################################
@@ -69,8 +73,6 @@ def initRPi():
    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_256) # CLK AT 1MHz
 #   bcm2835_spi_chipSelect(BCM2835_SPI_CS_NONE)
 
-#   print ("Initialisation has been successfully done !")
-
 # READ ADS1235Q1's REGISTERS
 
 def readRegister(address):
@@ -89,14 +91,19 @@ def writeRegister(address,value):
    command = 0x40 + (address & 0x1F)	# WREG is a 0x40 + rrh where rrh is a 5-bit register
    bcm2835_spi_transfer(command)
    bcm2835_spi_transfer(value)
+
    GPIO.output(nCS,GPIO.HIGH)
 
 def setupMain():
 
-#   print ("START OF MAIN SETUP TASK")
-
    # INIT
    initRPi()
+   
+   # ZeroMQ INITIALISATION
+   global socket
+   context = zmq.Context()
+   socket = context.socket(zmq.PUB)
+   socket.bind("tcp://*:9872")
 
    GPIO.output(nCS,GPIO.HIGH)
    GPIO.output(nRESET,GPIO.HIGH)
@@ -107,21 +114,35 @@ def setupMain():
    valueDR = 0b01100100			# 7200 SPS
    writeRegister(addressDR,valueDR)
 
-   # REFERENCE CONFIGURAION
+   # REFERENCE CONFIGURATION
    addressREF = 0b00110
    valueREF = 0b00001010
    writeRegister(addressREF,valueREF)
+   
+   addressEXC = 0b00011
+   # DC EXCITATION CONFIGURATION
+   valueDC = 0b00000001
+   writeRegister(addressEXC,valueDC)
+   
+   # AC EXCITATION CONFIGURATION
+#    valueAC = 0b01000001          # 2-wire AC bridge excitation (don't forget to polarise R22 instead of R8)
+#    writeRegister(addressEXC,valueAC)
+#    print("AC EXCITATION REGISTER CONTROL",readRegister(addressEXC))
+   
+   setupLoadCells()
 
-   # OFFSET AND FULL-SCALE CALIBRATION
-   writeRegister(0x07,0x00)
-   writeRegister(0x08,0x00)
-   writeRegister(0x09,0x00)
-
-   writeRegister(0x0A,0x00)
+   # USER CALIBRATION
+      # OFCAL
+#    writeRegister(0x07,0x00)  # Follow the user command procedure (cf. datasheet)
+#    writeRegister(0x08,0x00)
+#    writeRegister(0x09,0x00)
+   writeRegister(0x07,0x7D)
+   writeRegister(0x08,0x8D)
+   writeRegister(0x09,0x7F)   
+      # FSCAL
+   writeRegister(0x0A,0x00)     # Follow the user command procedure (cf. datasheet)
    writeRegister(0x0B,0x00)
    writeRegister(0x0C,0x40)
-
-#   print("SETUP IS DONE !")
 
 def setupLoadCells():
     
@@ -134,41 +155,67 @@ def setupLoadCells():
    addressMUX = 0b10001
    valueMUX = 0b01111000		# AIN4(+) and AIN5(-)
    writeRegister(addressMUX,valueMUX)
+   
+   # REFERENCE CONFIGURATION
+   addressREF = 0b00110
+   valueREF = 0b00001010
+   writeRegister(addressREF,valueREF)
 
-# Internal temperature measurement here once and then in parallel of the adc value (priority goes to adc value)
+# Internal temperature measurement
 def getTemperature():
+
+   Temperature = 0
+   Temperature_uV = 0
+   LSB_SIZE = (2*5/(2**24))*(10**6)   # ((2*Vref/PGA) / 2**24)*10e6 [in uV/code]
+   INVALID_TEMP_nPOWERED = -266.42857142857144
     
    # PGA Gain = 1
    addressPGA = 0b10000
-   valuePGA = 0b00000000 		# Gain of 1
+   valuePGA = 0b00000000 		      # Gain of 1
    writeRegister(addressPGA,valuePGA)
    
    # INMUX = 0b10111011
    addressMUX = 0b10001
-   valueMUX = 0b10111011		# Internal Temperature Sensor
+   valueMUX = 0b10111011		      # Internal Temperature Sensor
    writeRegister(addressMUX,valueMUX)
    
-   tmp = 0
-   Temperature = 0
-   TemperatureCelsius = 0
-# GPIO.output(START,GPIO.HIGH)
-# while nDRDY:
-#    print("waiting...")
-#    time.sleep(0)
-
+   # REFERENCE CONFIGURATION
+   addressREF = 0b00110
+   valueREF = 0b00000101
+   writeRegister(addressREF,valueREF)
+   
+   GPIO.output(START,GPIO.HIGH)
+   while (GPIO.input(nDRDY)):         # wait until temperature value is fully converted
+       print("Waiting until temperature is acquired...")
+   
    GPIO.output(nCS,GPIO.LOW)
    bcm2835_spi_transfer(0x12)
    bcm2835_spi_transfer(0xFF)
-   MSB = bcm2835_spi_transfer(0x00)
-   MIDSB = bcm2835_spi_transfer(0x00)
-   LSB = bcm2835_spi_transfer(0x00)
+   MSB_Temp = bcm2835_spi_transfer(0x00)
+   MIDSB_Temp = bcm2835_spi_transfer(0x00)
+   LSB_Temp = bcm2835_spi_transfer(0x00)
    GPIO.output(nCS,GPIO.HIGH)
 
-   dataTemp = [MSB,MIDSB,LSB]
-   for byteTemp in dataTemp:
-      Temperature = (tmp << 8) | byteTemp
-   TemperatureCelsius = ((Temperature - 122.4) / 420) + 25  # Temperature (°C) = [(Temperature Reading (uV) - 122.4) / 420 uV/°C] + 25°C
-   print("ADC Internal Temperature : ",TemperatureCelsius,"°C")
+   GPIO.output(START,GPIO.LOW)
+
+   data_Temp = [MSB_Temp,MIDSB_Temp,LSB_Temp]
+   for byte_Temp in data_Temp:
+      Temperature = (Temperature << 8) | byte_Temp
+
+   TEMP_DATA = (Temperature & 0x7FFFFF)          # 23 data bits
+   TEMP_SIGN = ((Temperature & 0x800000) >> 23)  # 1 sign bit
+   if (TEMP_SIGN == 1):                          # POSITIVE
+      Temperature_uV = TEMP_DATA*LSB_SIZE
+   else :                                        # NEGATIVE
+      Temperature_uV = -1*TEMP_DATA*LSB_SIZE
+
+   TemperatureCelsius = ((Temperature_uV - 122400) / 420) + 25  # Temperature (°C) = [(Temperature Reading (uV) - 122400) / 420 uV/°C] + 25°C
+   if (TemperatureCelsius == INVALID_TEMP_nPOWERED):
+      print("\nERR : The board is not powered on! Please try again.")
+   else:
+      print("\nThe ADC Internal Temperature is :",TemperatureCelsius,"°C")
+
+   setupLoadCells()
     
 ############################################################################################
 #                                                                                          #
@@ -176,15 +223,10 @@ def getTemperature():
 #                                                                                          #
 ############################################################################################
 
-# IT triggered on nDRDY has been configured through 'add_event_detect' in initRaspPI() function
+# IT triggered on nDRDY has been configured through 'add_event_detect' in initRPi() function
 
 adcTab = []
 spiTimeTab = []
-
-# ZeroMQ INITIALISATION
-context = zmq.Context()
-socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:9872")
 
 def myNoiseRMS(noiseTab):
     noisePow2 = noiseTab**2
@@ -194,24 +236,26 @@ def myNoiseRMS(noiseTab):
 
 def myCallback(channel):
    GPIO.output(START,GPIO.LOW)
-   GPIO.output(nCS,GPIO.LOW)
 
    ADC_VALUE = 0
-   ADC_VALUE_CAL = 0
 
+   GPIO.output(nCS,GPIO.LOW)
+#   time.sleep(0.001)
    startTimeSPI = time.time()
-   
    bcm2835_spi_transfer(0x12)
    bcm2835_spi_transfer(0xFF)
+
    MSB = bcm2835_spi_transfer(0x00)
    MIDSB = bcm2835_spi_transfer(0x00)
    LSB = bcm2835_spi_transfer(0x00)
-   
    stopTimeSPI = time.time()
+#   time.sleep(0.001)
+
+   GPIO.output(nCS,GPIO.HIGH)
    
    realTimeSPI = stopTimeSPI - startTimeSPI
    spiTimeTab.append(realTimeSPI)
-   if (len(spiTimeTab)>= 5000):
+   if (len(spiTimeTab)>= 7200):
       spiTimeMean = np.mean(spiTimeTab)*1000000  # useconds
       # Sending SPI Mean Time to PlotJuggler
       messageSPI = {"SPI Time (us)" : spiTimeMean}
@@ -219,25 +263,24 @@ def myCallback(channel):
       spiTimeTab.clear()
    
    data = [MSB,MIDSB,LSB]
-   
    for byte in data:
       ADC_VALUE = (ADC_VALUE << 8) | byte
 
-   # CALIBRATION : 100g i.e 0.981N corresponds to an adc code of 3150
-   if (ADC_VALUE >= 10000000 and ADC_VALUE <= 16778000):
-       ADC_VALUE_CAL = (ADC_VALUE - 16747800)*0.981/3150
-   else :
-       ADC_VALUE_CAL = (ADC_VALUE + 29500)*0.981/3150
+   ADC_VALUE_DATA = (ADC_VALUE & 0x7FFFFF)          # 23 data bits
+   ADC_VALUE_SIGN = ((ADC_VALUE & 0x800000) >> 23)  # 1 sign bit
 
-#    if (ADC_VALUE < -2 or ADC_VALUE > 100):
-#       raise (Exception("ERR : The ADC Value is out of normal range. Please reset the ADS1235Q1."))
-#       time.sleep(1)
-      
+# CALIBRATION : 100g i.e 0.981N corresponds to an adc code of 3100
+#               don't take into account the PGA gain 128 as done through calibration procedure
+
+   if (ADC_VALUE_SIGN == 1):                        # POSIITIVE
+       ADC_VALUE_CAL = (ADC_VALUE_DATA)*0.981/3100
+   else:                                            # NEGATIVE
+       ADC_VALUE_CAL = -1*(ADC_VALUE_DATA)*0.981/3100
+
    adcTab.append(ADC_VALUE_CAL)
-   if (len(adcTab)>=5000):              # Calculating the noise every 5000 samples, is that enough ?
+   if (len(adcTab)>=7200):                          # Calculating the noise every 7200 samples
        noiseTab = zeros(len(adcTab),float)
        adcMean = np.mean(adcTab)
-
        for index in range(0,len(adcTab)-1):
           noiseTab[index] = abs(adcTab[index] - adcMean)
           
@@ -252,8 +295,6 @@ def myCallback(channel):
    messageADC = {"ADC VALUE (N)" : ADC_VALUE_CAL}
    socket.send_string(json.dumps(messageADC))
 
-   GPIO.output(nCS,GPIO.HIGH)
-
    GPIO.output(START,GPIO.HIGH)     # start a new data conversion
 
 
@@ -265,22 +306,13 @@ def myCallback(channel):
 
 #print ("START OF THE MAIN FUNCTION")
 
-print("Please visualize all data in Plot Juggler with the following ZMQ SUB configuration :\n")
-print("   Transport     Address     Port   |  Message Protocol")
-print("    tcp://      localhost    9872   |        json    \n")
-
 GPIO.setwarnings(False)
 
-setupMain()
-
+setupMain() 
 getTemperature()
-
-setupLoadCells()
-
 GPIO.add_event_detect(nDRDY,
                       GPIO.FALLING,
                       callback=myCallback)
-                    # bouncetime = ?
 
 GPIO.output(START,GPIO.HIGH) # start first conversion
 
