@@ -34,7 +34,6 @@ void initESP32() {
     // Initialize SPI
     SPI.begin();
     SPI.beginTransaction(SPISettings(4000000,MSBFIRST,SPI_MODE1));
-//    SPI.setClockDivider(1024);
 }
 
 // READ ADS1235Q1's REGISTERS
@@ -59,8 +58,6 @@ void writeRegister(uint8_t address, uint8_t value) {
 
 void setupMain() {
     // INIT
-//    Serial.begin(115200);
-//    Serial.begin(921600);
     Serial.begin(1000000);
     while(!Serial);
     initESP32();
@@ -210,7 +207,6 @@ void myCallback() {
 
     if (counter >= 0xFFFF) {
       counter = 0x0000;
-      // Raise an exception to notify the user that counter has achieved max value ?
     }
 
 }
@@ -227,12 +223,3 @@ void loop() {
     myCallback();
   }
 }
-
-
-// Pour formattage des données avec SYNC, compteur, data, faire un tableau de taille 3 de chaine de caractères. Ainsi, indice 0 correspondra aux 2 caractères hexa du SYNC et etc...
-// Ensuite, envoyer les data en UART vers USB0 (le cable USB comprend des fils d'UART), checker à l'oscillo la sortie l'UART de l'ESP32 (il faut voir un temps de data puis un temps de pause avec une période de ces deux temps de 1/7200 pour valider les 7200Hz)
-
-// Pour début de semaine pro : redirection des données reçues en UART vers un fichier annexe puis programme python qui va décomposer les trames par identification du SYNC, du compteur et des data.
-// Il faudra alors extraire la data sur 24 bits, la mettre à l'échelle avec la formule *0.981/3100 puis la plot avec plotjuggler
-// Fin de semaine pro : voir pour tests sur Talos
-

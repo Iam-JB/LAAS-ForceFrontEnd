@@ -49,7 +49,7 @@ def FindSyncByte() :
                 index+=1
                         
         # a 0x31 has been found
-        for i in range(1,6) :  # est-ce que 5 octets plus loin, j'ai encore 31 ? si sur 5 iter c'est le cas, alors c'est l'octet de synchro, sinon continuer à chercher
+        for i in range(1,6) :
             byte = myContent[index+6*i]
             if byte == SYNC_BYTE :
                 check+=1
@@ -98,7 +98,7 @@ def Loop() :
            # CALIBRATION
         FORCE_SIGN = (FORCE_VALUE & 0x800000)
         FORCE_VALUE_DATA = (FORCE_VALUE & 0x7FFFFF)
-        if (FORCE_SIGN == 1):                                   # NEGATIVE
+        if (FORCE_SIGN == 1):                                    # NEGATIVE
             FORCE_VALUE_CAL = -1*(FORCE_VALUE_DATA)*0.981/3100
         else:                                                    # POSITIVE
             FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
@@ -108,6 +108,7 @@ def Loop() :
         messageForce = {"Force Value (N)" : FORCE_VALUE_CAL}
         socket.send_string(json.dumps(messageForce))
         time.sleep(0.1)
+        
         # REFRESHING INDEX VALUE
         tmp+=6
 
