@@ -5,12 +5,11 @@
 // https://github.com/Iam-JB/LAAS-ForceFrontEnd
 
 // GPIOs DEFINITION
-const int nCS = 5;
-const int START = 12;
-const int nDRDY = 14;
-const int nPWDN = 27;
-const int nRESET = 13;
-const int testPin = 4 ;
+const int nCS = 17;
+const int START = 20;
+const int nDRDY = 21;
+const int nPWDN = 26;
+const int nRESET = 22;
 
 // Buffers
 uint32_t adcTab[7200];
@@ -22,9 +21,8 @@ uint16_t counter = 0x0000;      // Counter 16 bits
 uint64_t dataToBeSend = 0;
 uint8_t tabToBeSendUART[6];
 
-void initESP32() {
+void initPiPico() {
     // Initialize GPIO pins
-    pinMode(testPin, OUTPUT);
     pinMode(nCS, OUTPUT);
     pinMode(START, OUTPUT);
     pinMode(nRESET, OUTPUT);
@@ -58,14 +56,10 @@ void writeRegister(uint8_t address, uint8_t value) {
 
 void setupMain() {
     // INIT
-    Serial.begin(1000000);
+    Serial.begin();   // No need to specify speed for Pi Pico as virtual UART
     while(!Serial);
-    initESP32();
-    while(0)
-    {
-      Serial.print("HELLO!");
-      delay(500);
-    }
+    initPiPico();
+
     digitalWrite(nCS, HIGH);
     digitalWrite(nRESET, HIGH);
     digitalWrite(nPWDN, HIGH);
@@ -116,16 +110,6 @@ void setupMain() {
 //    writeRegister(0x0C, 0x3C);
 }
 
-// float myNoiseRMS(float noiseTab[]) {
-//     float noisePow2[7200];
-//     float noiseMean = 0.0;
-//     for (int i = 0; i < 7200; i++) {
-//         noisePow2[i] = noiseTab[i] * noiseTab[i];
-//         noiseMean += noisePow2[i];
-//     }
-//     noiseMean /= 7200;
-//     return sqrt(noiseMean);
-// }
 
 void myCallback() {
     uint32_t ADC_VALUE = 0;
@@ -143,7 +127,7 @@ void myCallback() {
     // float realTimeSPI = (float)(stopTimeSPI - startTimeSPI);
     // Serial.println(realTimeSPI);
 
-    uint8_t MSBb = 0x7F;
+    // uint8_t MSBb = 0x7F;
     int data[3] = {MSB,MIDSB,LSB};
     for (int i = 0 ; i <= 2 ; i++){
       ADC_VALUE = (ADC_VALUE << 8) | data[i];
@@ -152,43 +136,9 @@ void myCallback() {
     uint32_t ADC_VALUE_DATA = (ADC_VALUE & 0x7FFFFF);          // 23 data bits
     uint32_t ADC_VALUE_SIGN = ((ADC_VALUE & 0x800000) >> 23);  // 1 sign bit
 
-    // float ADC_VALUE_CAL = 0;
-    // if (ADC_VALUE_SIGN == 1) { // POSITIVE
-    //     ADC_VALUE_CAL = (float)(ADC_VALUE_DATA)*0.981 / 3100.0;
-    // } else {                   // NEGATIVE
-    //     ADC_VALUE_CAL = -1 * (float)(ADC_VALUE_DATA)*0.981 / 3100.0;
-    // }
-
-    // float ADC_VALUE_CAL = 0;
-    // if (ADC_VALUE_SIGN == 1) { // POSITIVE
-    //     ADC_VALUE_CAL = (float)(ADC_VALUE_DATA);
-    // } else {                   // NEGATIVE
-    //     ADC_VALUE_CAL = -1 * (float)(ADC_VALUE_DATA);
-    // }
-
-    // Serial.print(ADC_VALUE_CAL);
-    // Serial.print("\n");
-    // adcTab[adcIndex] = ADC_VALUE_CAL;
-    // adcIndex++;
-    // if (adcIndex >= 7200) {  // Calculating the noise every 7200 samples
-    //     float noiseTab[7200];
-    //     float adcMean = 0.0;
-    //     for (int i = 0; i < 7200; i++) {
-    //         adcMean += adcTab[i];
-    //     }
-    //     adcMean /= 7200;
-
-    //     for (int i = 0; i < 7200; i++) {
-    //         noiseTab[i] = abs(adcTab[i] - adcMean);
-    //     }
-
-    //     float noiseRMS = myNoiseRMS(noiseTab);
-    //     adcIndex = 0;  // Reset index
-    // }
-
     // FORMATING AS SYNC | COUNTER | FORCE_VALUE
     counter++;
-    uint8_t MSBcounter = counter & 0xFF00 ;
+    uint8_t MSBcounter = (counter & 0xFF00) >> 8 ;
     uint8_t LSBcounter = counter & 0x00FF ;
     
     tabToBeSendUART[0] = SYNC ;
@@ -198,12 +148,8 @@ void myCallback() {
     tabToBeSendUART[4] = MIDSB ;
     tabToBeSendUART[5] = LSB ;
     
-//    digitalWrite(testPin,HIGH);
     Serial.write(tabToBeSendUART,6);
-    //delay(500);
-
     Serial.flush();
-//    digitalWrite(testPin,LOW);
 
     if (counter >= 0xFFFF) {
       counter = 0x0000;
