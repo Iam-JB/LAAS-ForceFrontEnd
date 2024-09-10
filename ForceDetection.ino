@@ -12,13 +12,12 @@ const int nPWDN = 26;
 const int nRESET = 22;
 
 // Buffers
-uint32_t adcTab[7200];
-float spiTimeTab[7200];
-int adcIndex = 0;
-int spiTimeIndex = 0;
+//uint32_t adcTab[7200];
+//float spiTimeTab[7200];
+//int adcIndex = 0;
+//int spiTimeIndex = 0;
 const int SYNC = 0x31;
 uint16_t counter = 0x0000;      // Counter 16 bits
-uint64_t dataToBeSend = 0;
 uint8_t tabToBeSendUART[6];
 
 void initPiPico() {
@@ -98,16 +97,17 @@ void setupMain() {
     // writeRegister(0x07, 0x00); // Follow the user calibration procedure (cf. datasheet)
     // writeRegister(0x08, 0x00);
     // writeRegister(0x09, 0x00);
-    writeRegister(0x07, 0x7F);
-    writeRegister(0x08, 0x7F);
+    writeRegister(0x07, 0x7F); // Follow the user calibration procedure (cf. datasheet)
+    writeRegister(0x08, 0x8C);
     writeRegister(0x09, 0x7F);
+
       // FSCAL
     writeRegister(0x0A, 0x00); // Follow the user calibration procedure (cf. datasheet)
     writeRegister(0x0B, 0x00);
     writeRegister(0x0C, 0x40);
-//    writeRegister(0x0A, 0xCC);
-//    writeRegister(0x0B, 0xCC);
-//    writeRegister(0x0C, 0x3C);
+  //  writeRegister(0x0A, 0xCC);
+  //  writeRegister(0x0B, 0xCC);
+  //  writeRegister(0x0C, 0x3C);
 }
 
 
@@ -133,9 +133,6 @@ void myCallback() {
       ADC_VALUE = (ADC_VALUE << 8) | data[i];
     }
 
-    uint32_t ADC_VALUE_DATA = (ADC_VALUE & 0x7FFFFF);          // 23 data bits
-    uint32_t ADC_VALUE_SIGN = ((ADC_VALUE & 0x800000) >> 23);  // 1 sign bit
-
     // FORMATING AS SYNC | COUNTER | FORCE_VALUE
     counter++;
     uint8_t MSBcounter = (counter & 0xFF00) >> 8 ;
@@ -147,11 +144,12 @@ void myCallback() {
     tabToBeSendUART[3] = MSB ;
     tabToBeSendUART[4] = MIDSB ;
     tabToBeSendUART[5] = LSB ;
-    
+
     Serial.write(tabToBeSendUART,6);
     Serial.flush();
+    delay(50) ;
 
-    if (counter >= 0xFFFF) {
+    if (counter >= 0xFFFF) { // No really needed here as counter is defined as a uint16_t
       counter = 0x0000;
     }
 

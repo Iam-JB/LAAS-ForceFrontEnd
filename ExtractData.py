@@ -9,6 +9,7 @@
 
 from struct import *
 from math import *
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy import *
 import time
@@ -19,7 +20,7 @@ import json
 #                                DECLARATIONS                                #
 ##############################################################################
 
-myFile = open("data2.bin","rb") # Read as binary file
+myFile = open("dataMyPCB.bin","rb") # Read as binary file
 myContent = myFile.read()
 
 SYNC_BYTE = 0x31
@@ -29,10 +30,6 @@ index = 0
 check = 0
 adcTab = []
 noiseTab = []
-
-context = zmq.Context()
-socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:9872")
 
 ##############################################################################
 #                                 FUNCTIONS                                  #
@@ -48,8 +45,6 @@ def FindSyncByte() :
     while not sync_found :
         while not byte == SYNC_BYTE :
             byte = myContent[index]
-            print(byte)
-            time.sleep(0.5)
             if not (byte == SYNC_BYTE) :
                 index+=1
                         
@@ -62,6 +57,7 @@ def FindSyncByte() :
         if check == 5 :
             sync_found = True
             print("First sync byte has been found at index",index)
+
         else :
             print("Still looking for sync byte...")
         
@@ -82,9 +78,22 @@ def SetUp() :
 def Loop() :
     global adcTab
     global noiseTab
-    global socket
     global index
     tmp = index
+    
+    global fig
+    global ax
+    global line
+
+    fig, ax = plt.subplots()
+    line, = ax.plot([], [], 'r-')
+    ax.set_xlim(0, 12000)
+#     ax.set_xlim(8500,11000)
+#     ax.set_xlim(0, 3000)
+    ax.set_ylim(-5, 40)
+    ax.set_xlabel('Index')
+    ax.set_ylabel('Force Value (N)')
+    xdata, ydata = [], []
     
     while (tmp <= len(myContent)-5) :
         
@@ -94,12 +103,6 @@ def Loop() :
         LSB_counter = myContent[tmp+2]
         
         COUNTER_VALUE = (MSB_counter << 8) | LSB_counter
-        print(COUNTER_VALUE)
-           # PLOT JUGGLER
-#        print(COUNTER_VALUE)
-        messageCounter = {"Counter Value" : COUNTER_VALUE}
-        socket.send_string(json.dumps(messageCounter))
-#        time.sleep(0.1)
         
         # TORQUE VALUE
            # FORMAT
@@ -117,33 +120,30 @@ def Loop() :
         else:                                                    # POSITIVE
             FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
         
-           # PLOT JUGGLER
-#        print(TORQUE_VALUE_CAL)
-        messageForce = {"Force Value (N)" : FORCE_VALUE_CAL}
-        socket.send_string(json.dumps(messageForce))
-#        time.sleep(0.1)
+           # MATPLOTLIB
+        xdata.append(tmp)
+        ydata.append(FORCE_VALUE_CAL)
+        line.set_data(xdata, ydata)
         
            # NOISE MEASUREMENT
         adcTab.append(FORCE_VALUE_CAL)
-        if (len(adcTab)>=7200):                          # Calculating the noise every 7200 samples
+        
+        if (len(adcTab)>=1000):                          # Calculating the noise every 1000 samples
             noiseTab = np.zeros(len(adcTab),float)
             adcMean = np.mean(adcTab)
             for index in range(0,len(adcTab)-1):
                noiseTab[index] = abs(adcTab[index] - adcMean)
           
             noiseRMS = myNoiseRMS(noiseTab)
-       
-            messageRMS = {"NOISE RMS (N)" : noiseRMS}
-            socket.send_string(json.dumps(messageRMS))
+            print("Noise RMS :",noiseRMS,"N")
    
             adcTab.clear()
-           
+
         # REFRESHING INDEX VALUE
         tmp+=6
-
         
+    plt.show()
+
 
 SetUp()
 Loop()
-
-    
