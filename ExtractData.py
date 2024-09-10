@@ -20,7 +20,7 @@ import json
 #                                DECLARATIONS                                #
 ##############################################################################
 
-myFile = open("dataMyPCB.bin","rb") # Read as binary file
+myFile = open("dataEVM.bin","rb") # Read as binary file
 myContent = myFile.read()
 
 SYNC_BYTE = 0x31
@@ -30,6 +30,7 @@ index = 0
 check = 0
 adcTab = []
 noiseTab = []
+counterTracker = 0
 
 ##############################################################################
 #                                 FUNCTIONS                                  #
@@ -41,6 +42,7 @@ def FindSyncByte() :
     global byte
     global SYNC_BYTE
     global sync_found
+    global counterTracker
     
     while not sync_found :
         while not byte == SYNC_BYTE :
@@ -63,7 +65,10 @@ def FindSyncByte() :
         
         byte = 0x00
         check = 0
-        
+    
+    counterTracker = (myContent[index+1] << 8) | myContent[index+2]
+    print(counterTracker)
+
 
 def myNoiseRMS(noiseTab):
     noisePow2 = np.power(noiseTab,2)
@@ -74,22 +79,20 @@ def myNoiseRMS(noiseTab):
 
 def SetUp() :
     FindSyncByte()
-    
+
+
 def Loop() :
+    global counterTracker
     global adcTab
     global noiseTab
     global index
     tmp = index
     
-    global fig
     global ax
     global line
-
     fig, ax = plt.subplots()
     line, = ax.plot([], [], 'r-')
     ax.set_xlim(0, 12000)
-#     ax.set_xlim(8500,11000)
-#     ax.set_xlim(0, 3000)
     ax.set_ylim(-5, 40)
     ax.set_xlabel('Index')
     ax.set_ylabel('Force Value (N)')
@@ -103,6 +106,15 @@ def Loop() :
         LSB_counter = myContent[tmp+2]
         
         COUNTER_VALUE = (MSB_counter << 8) | LSB_counter
+
+#            # TRACKING
+#         if not (counterTracker == COUNTER_VALUE) :      # Attention, pour que cette fonctionnalité de tracking fonction, il ne faut pas close et open le port sur gtk
+#             print("WARNING : One force value has been skipped")
+#             print("   COUNTER_VALUE = ",COUNTER_VALUE)
+#             print("   counterTracking = ",counterTracking)
+#             time.sleep(5)
+#             
+#         counterTracker+=1
         
         # TORQUE VALUE
            # FORMAT
@@ -120,15 +132,15 @@ def Loop() :
         else:                                                    # POSITIVE
             FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
         
+        adcTab.append(FORCE_VALUE_CAL)
+        
            # MATPLOTLIB
         xdata.append(tmp)
         ydata.append(FORCE_VALUE_CAL)
         line.set_data(xdata, ydata)
         
            # NOISE MEASUREMENT
-        adcTab.append(FORCE_VALUE_CAL)
-        
-        if (len(adcTab)>=1000):                          # Calculating the noise every 1000 samples
+        if (len(adcTab)>=1000):      # Calculating the noise every 1000 samples
             noiseTab = np.zeros(len(adcTab),float)
             adcMean = np.mean(adcTab)
             for index in range(0,len(adcTab)-1):
