@@ -7,20 +7,17 @@
 #                               IMPORT / EXPORT                              #
 ##############################################################################
 
-from struct import *
 from math import *
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import *
 import time
-import zmq
-import json
 
 ##############################################################################
 #                                DECLARATIONS                                #
 ##############################################################################
 
-myFile = open("dataEVM.bin","rb") # Read as binary file
+myFile = open("test.bin","rb") # Read as binary file
 myContent = myFile.read()
 
 SYNC_BYTE = 0x31
@@ -67,7 +64,6 @@ def FindSyncByte() :
         check = 0
     
     counterTracker = (myContent[index+1] << 8) | myContent[index+2]
-    print(counterTracker)
 
 
 def myNoiseRMS(noiseTab):
@@ -87,19 +83,23 @@ def Loop() :
     global noiseTab
     global index
     tmp = index
+    startTime = time.time()
+    currentTime = 0
     
     global ax
     global line
     fig, ax = plt.subplots()
     line, = ax.plot([], [], 'r-')
-    ax.set_xlim(0, 12000)
-    ax.set_ylim(-5, 40)
-    ax.set_xlabel('Index')
+    ax.set_xlim(0, 300)
+    ax.set_ylim(-35, 35)
+    ax.set_xlabel('Time (s)')
     ax.set_ylabel('Force Value (N)')
     xdata, ydata = [], []
     
     while (tmp <= len(myContent)-5) :
         
+        currentTime += (time.time() - startTime)
+
         # COUNTER VALUE
            # FORMAT
         MSB_counter = myContent[tmp+1]
@@ -108,13 +108,15 @@ def Loop() :
         COUNTER_VALUE = (MSB_counter << 8) | LSB_counter
 
 #            # TRACKING
-#         if not (counterTracker == COUNTER_VALUE) :      # Attention, pour que cette fonctionnalité de tracking fonction, il ne faut pas close et open le port sur gtk
+#         if not (counterTracker == COUNTER_VALUE) :      # Attention, pour que cette fonctionnalité de tracking fonction, il ne faut pas close puis re-open le port sur GTKTerm
 #             print("WARNING : One force value has been skipped")
 #             print("   COUNTER_VALUE = ",COUNTER_VALUE)
 #             print("   counterTracking = ",counterTracking)
 #             time.sleep(5)
-#             
-#         counterTracker+=1
+#         else :
+#             print("everything ok")
+            
+        counterTracker+=1
         
         # TORQUE VALUE
            # FORMAT
@@ -125,17 +127,17 @@ def Loop() :
         FORCE_VALUE = (MSB_data << 16) | (MIDSB_data << 8) | LSB_data
         
            # CALIBRATION
-        FORCE_SIGN = (FORCE_VALUE & 0x800000)
+        FORCE_SIGN = (FORCE_VALUE & 0x800000) >> 23
         FORCE_VALUE_DATA = (FORCE_VALUE & 0x7FFFFF)
-        if (FORCE_SIGN == 1):                                    # NEGATIVE
-            FORCE_VALUE_CAL = -1*(FORCE_VALUE_DATA)*0.981/3100
+        if (FORCE_SIGN == 1):                                    # NEGATIVE (A2 COMPLEMENT)
+            FORCE_VALUE_CAL = (FORCE_VALUE - (1<<24))*0.981/3100
         else:                                                    # POSITIVE
             FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
         
         adcTab.append(FORCE_VALUE_CAL)
-        
+
            # MATPLOTLIB
-        xdata.append(tmp)
+        xdata.append(currentTime)
         ydata.append(FORCE_VALUE_CAL)
         line.set_data(xdata, ydata)
         
