@@ -97,9 +97,12 @@ void setupMain() {
     // writeRegister(0x07, 0x00); // Follow the user calibration procedure (cf. datasheet)
     // writeRegister(0x08, 0x00);
     // writeRegister(0x09, 0x00);
-    writeRegister(0x07, 0x7F); // Follow the user calibration procedure (cf. datasheet)
-    writeRegister(0x08, 0x8C);
-    writeRegister(0x09, 0x7F);
+    // writeRegister(0x07, 0x7F); // Follow the user calibration procedure (cf. datasheet)
+    // writeRegister(0x08, 0x8C);
+    // writeRegister(0x09, 0x7F);
+    writeRegister(0x07, 0x7D); // Follow the user calibration procedure (cf. datasheet)
+    writeRegister(0x08, 0x27);
+    writeRegister(0x09, 0x04);
 
       // FSCAL
     writeRegister(0x0A, 0x00); // Follow the user calibration procedure (cf. datasheet)
@@ -132,7 +135,8 @@ void myCallback() {
     for (int i = 0 ; i <= 2 ; i++){
       ADC_VALUE = (ADC_VALUE << 8) | data[i];
     }
-
+    uint32_t ADC_VALUE_DATA = ADC_VALUE & 0x7FFFFF ;
+    uint32_t ADC_VALUE_SIGN = (ADC_VALUE & 0x800000) >> 23 ;
     // FORMATING AS SYNC | COUNTER | FORCE_VALUE
     counter++;
     uint8_t MSBcounter = (counter & 0xFF00) >> 8 ;
@@ -145,6 +149,16 @@ void myCallback() {
     tabToBeSendUART[4] = MIDSB ;
     tabToBeSendUART[5] = LSB ;
 
+    // Serial.println(ADC_VALUE) ;
+    
+    // if (ADC_VALUE_SIGN == 1){
+    //   Serial.println("NEGATIVE") ;
+    //   ADC_VALUE_DATA = 0x800000 - ADC_VALUE_DATA ;
+    // } else {
+    //   Serial.println("POSITIVE") ;
+    // }
+
+    // Serial.println(ADC_VALUE_DATA) ;
     Serial.write(tabToBeSendUART,6);
     Serial.flush();
     delay(50) ;
