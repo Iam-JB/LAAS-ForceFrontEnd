@@ -161,7 +161,7 @@ void myCallback() {
     // Serial.println(ADC_VALUE_DATA) ;
     Serial.write(tabToBeSendUART,6);
     Serial.flush();
-    delay(50) ;
+    // delay(1);
 
     if (counter >= 0xFFFF) { // No really needed here as counter is defined as a uint16_t
       counter = 0x0000;
