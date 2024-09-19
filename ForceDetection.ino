@@ -12,10 +12,6 @@ const int nPWDN = 26;
 const int nRESET = 22;
 
 // Buffers
-//uint32_t adcTab[7200];
-//float spiTimeTab[7200];
-//int adcIndex = 0;
-//int spiTimeIndex = 0;
 const int SYNC = 0x31;
 uint16_t counter = 0x0000;      // Counter 16 bits
 uint8_t tabToBeSendUART[6];
@@ -55,7 +51,7 @@ void writeRegister(uint8_t address, uint8_t value) {
 
 void setupMain() {
     // INIT
-    Serial.begin();   // No need to specify speed for Pi Pico as virtual UART
+    Serial.begin();   // No need to specify serial speed for Pi Pico due to virtual UART
     while(!Serial);
     initPiPico();
 
@@ -97,9 +93,6 @@ void setupMain() {
     // writeRegister(0x07, 0x00); // Follow the user calibration procedure (cf. datasheet)
     // writeRegister(0x08, 0x00);
     // writeRegister(0x09, 0x00);
-    // writeRegister(0x07, 0x7F); // Follow the user calibration procedure (cf. datasheet)
-    // writeRegister(0x08, 0x8C);
-    // writeRegister(0x09, 0x7F);
     writeRegister(0x07, 0x7D); // Follow the user calibration procedure (cf. datasheet)
     writeRegister(0x08, 0x27);
     writeRegister(0x09, 0x04);
@@ -117,7 +110,6 @@ void setupMain() {
 void myCallback() {
     uint32_t ADC_VALUE = 0;
     
-    // unsigned long startTimeSPI = micros();
     digitalWrite(nCS, LOW);
     SPI.transfer(0x12);
     SPI.transfer(0xFF);
@@ -125,18 +117,14 @@ void myCallback() {
     uint8_t MIDSB = SPI.transfer(0x00);
     uint8_t LSB = SPI.transfer(0x00);
     digitalWrite(nCS, HIGH);
-    // unsigned long stopTimeSPI = micros();
-    
-    // float realTimeSPI = (float)(stopTimeSPI - startTimeSPI);
-    // Serial.println(realTimeSPI);
 
-    // uint8_t MSBb = 0x7F;
     int data[3] = {MSB,MIDSB,LSB};
     for (int i = 0 ; i <= 2 ; i++){
       ADC_VALUE = (ADC_VALUE << 8) | data[i];
     }
     uint32_t ADC_VALUE_DATA = ADC_VALUE & 0x7FFFFF ;
     uint32_t ADC_VALUE_SIGN = (ADC_VALUE & 0x800000) >> 23 ;
+
     // FORMATING AS SYNC | COUNTER | FORCE_VALUE
     counter++;
     uint8_t MSBcounter = (counter & 0xFF00) >> 8 ;
@@ -149,21 +137,10 @@ void myCallback() {
     tabToBeSendUART[4] = MIDSB ;
     tabToBeSendUART[5] = LSB ;
 
-    // Serial.println(ADC_VALUE) ;
-    
-    // if (ADC_VALUE_SIGN == 1){
-    //   Serial.println("NEGATIVE") ;
-    //   ADC_VALUE_DATA = 0x800000 - ADC_VALUE_DATA ;
-    // } else {
-    //   Serial.println("POSITIVE") ;
-    // }
-
-    // Serial.println(ADC_VALUE_DATA) ;
     Serial.write(tabToBeSendUART,6);
     Serial.flush();
-    // delay(1);
 
-    if (counter >= 0xFFFF) { // No really needed here as counter is defined as a uint16_t
+    if (counter >= 0xFFFF) { // Not really needed here as counter is defined as a uint16_t
       counter = 0x0000;
     }
 

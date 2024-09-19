@@ -7,17 +7,23 @@
 #                               IMPORT / EXPORT                              #
 ##############################################################################
 
-from math import *
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
-from numpy import *
 import time
+from numpy import *
+from math import *
+from scipy import signal
 
 ##############################################################################
 #                                DECLARATIONS                                #
 ##############################################################################
 
-myFile = open("test.bin","rb") # Read as binary file
+palContent = pd.read_csv('out.csv')
+palTime = palContent["time"].to_list()
+palData = palContent["torque"].to_list()
+
+myFile = open("exp_evm4.bin","rb") # Read as binary file
 myContent = myFile.read()
 
 SYNC_BYTE = 0x31
@@ -27,7 +33,11 @@ index = 0
 check = 0
 adcTab = []
 noiseTab = []
-counterTracker = 0
+# counterTracker = 0
+
+b,a = signal.butter(1,1000/(0.5*7200),btype='low',analog=False) # Coefficients of the 1st Butterworth order (low-pass filter with fc = 1kHz)
+b1,a1 = signal.butter(1,10/(0.5*7200),btype='low',analog=False) # Coefficients of the 1st Butterworth order (low-pass filter with fc = 10Hz)
+b2,a2 = signal.butter(1,10/(0.5*7200),btype='low',analog=False) # Coefficients of the 1st Butterworth order (low-pass filter with fc = 10Hz)
 
 ##############################################################################
 #                                 FUNCTIONS                                  #
@@ -47,13 +57,13 @@ def FindSyncByte() :
             if not (byte == SYNC_BYTE) :
                 index+=1
                         
-        # a 0x31 has been found
+        # A 0x31 has been found. Is it the sync byte ?
         for i in range(1,6) :
             byte = myContent[index+6*i]
-            if byte == SYNC_BYTE :
+            if byte == SYNC_BYTE : 
                 check+=1
         
-        if check == 5 :
+        if check == 5 : # Assume that if we see 5 times 0x31 at 6 bytes distance then it is the synchronisation byte
             sync_found = True
             print("First sync byte has been found at index",index)
 
@@ -82,23 +92,16 @@ def Loop() :
     global adcTab
     global noiseTab
     global index
+    global palData
     tmp = index
     startTime = time.time()
     currentTime = 0
     
-    global ax
-    global line
-    fig, ax = plt.subplots()
-    line, = ax.plot([], [], 'r-')
-    ax.set_xlim(0, 300)
-    ax.set_ylim(-35, 35)
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Force Value (N)')
     xdata, ydata = [], []
     
     while (tmp <= len(myContent)-5) :
         
-        currentTime += (time.time() - startTime)
+        currentTime += (time.time() - startTime)*1000 # time in ms
 
         # COUNTER VALUE
            # FORMAT
@@ -107,25 +110,26 @@ def Loop() :
         
         COUNTER_VALUE = (MSB_counter << 8) | LSB_counter
 
-#            # TRACKING
-#         if not (counterTracker == COUNTER_VALUE) :      # Attention, pour que cette fonctionnalité de tracking fonction, il ne faut pas close puis re-open le port sur GTKTerm
+           # TRACKING
+#         if not (counterTracker == COUNTER_VALUE) :
 #             print("WARNING : One force value has been skipped")
 #             print("   COUNTER_VALUE = ",COUNTER_VALUE)
-#             print("   counterTracking = ",counterTracking)
+#             print("   counterTracking = ",counterTracker)
 #             time.sleep(5)
-#         else :
-#             print("everything ok")
-            
-        counterTracker+=1
+
+#         if (counterTracker > 65534) :
+#             counterTracker = 0
+#             
+#         counterTracker+=1
         
         # TORQUE VALUE
            # FORMAT
         MSB_data = myContent[tmp+3]
         MIDSB_data = myContent[tmp+4]
         LSB_data = myContent[tmp+5]
-        
+
         FORCE_VALUE = (MSB_data << 16) | (MIDSB_data << 8) | LSB_data
-        
+
            # CALIBRATION
         FORCE_SIGN = (FORCE_VALUE & 0x800000) >> 23
         FORCE_VALUE_DATA = (FORCE_VALUE & 0x7FFFFF)
@@ -133,31 +137,47 @@ def Loop() :
             FORCE_VALUE_CAL = (FORCE_VALUE - (1<<24))*0.981/3100
         else:                                                    # POSITIVE
             FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
-        
+
         adcTab.append(FORCE_VALUE_CAL)
 
            # MATPLOTLIB
         xdata.append(currentTime)
         ydata.append(FORCE_VALUE_CAL)
-        line.set_data(xdata, ydata)
+        currentTime = 0
         
            # NOISE MEASUREMENT
-        if (len(adcTab)>=1000):      # Calculating the noise every 1000 samples
-            noiseTab = np.zeros(len(adcTab),float)
-            adcMean = np.mean(adcTab)
-            for index in range(0,len(adcTab)-1):
-               noiseTab[index] = abs(adcTab[index] - adcMean)
-          
-            noiseRMS = myNoiseRMS(noiseTab)
-            print("Noise RMS :",noiseRMS,"N")
-   
+        if (len(adcTab)>=500):      # Calculating the noise every 500 samples
+            adcTab_numpy = np.array(adcTab)
+            noiseRMS = np.sqrt(np.mean((adcTab_numpy-adcTab_numpy.mean())**2))
+#             print("Noise RMS :",noiseRMS,"N")
             adcTab.clear()
 
         # REFRESHING INDEX VALUE
-        tmp+=6
-        
-    plt.show()
+        tmp+=6*4
 
+    # APPLYING LOW-PASS FILTER
+    ydata_filtered = -signal.filtfilt(b,a,ydata)
+       
+    # APPLYING SCALE
+    ydata_filtered = (ydata_filtered-(85.8695))*9.7
+    y1 = signal.filtfilt(b1,a1,palData)
+    y2 = signal.filtfilt(b2,a2,ydata_filtered)
+    B = np.mean(y2)-np.mean(y1)
+    A = np.sqrt((np.var(y2))/(np.var(y1)))
+#     print("biais :",B) # It should be equal to 0
+#     print("variance :",A) # It should be equal to 1
+
+    # PLOTTING
+    plt.figure()
+    plt.subplot(2,1,1)
+    plt.plot(palTime,palData)
+    plt.title('PAL DATA')
+
+    plt.subplot(2,1,2)
+    plt.plot(xdata,ydata_filtered)
+    plt.title('EVM signal with numerical filter')
+    plt.show()
+    
 
 SetUp()
 Loop()

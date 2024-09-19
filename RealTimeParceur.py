@@ -9,7 +9,6 @@
 
 import serial
 from math import *
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy import *
 import time
@@ -20,7 +19,13 @@ import json
 #                                DECLARATIONS                                #
 ##############################################################################
 
-ser = serial.Serial('/dev/ttyACM0', 2000000, timeout=1) # socat PTY,link=$HOME/ttyVIRT0,raw,echo=0 /dev/ttyACMx,raw,echo=0
+print ("Hello Gepetto Team !\n")
+
+print("Please visualize all data in Plot Juggler with the following ZMQ SUB configuration :\n")
+print("   Transport     Address     Port   |  Message Protocol")
+print("    tcp://      localhost    9872   |        json    \n")
+
+ser = serial.Serial('/dev/ttyACM1', 2000000, timeout=1)
 
 SYNC_BYTE = 0x31
 sync_found = False
@@ -65,15 +70,7 @@ def FindSyncByte() :
              print("Still looking for 0x31 sync byte")
         
         index+=1
-
-
-def myNoiseRMS(noiseTab):
-    noisePow2 = np.power(noiseTab,2)
-    noiseMean = np.mean(noisePow2)
-    noiseRMS = np.sqrt(noiseMean)
-    return noiseRMS
         
-
 def SetUp() :
     FindSyncByte()
 
@@ -84,12 +81,8 @@ def Loop() :
     global index
     global socket
     tmp = index
-    startTime = time.time()
-    currentTime = 0
     
     while (1) :
-              
-        currentTime += (time.time() - startTime)
 
         # COUNTER VALUE
            # FORMAT     
@@ -98,8 +91,6 @@ def Loop() :
         # TORQUE VALUE
            # FORMAT
         FORCE_VALUE_BYTES = ser.read(3)
-        
-#        print(FORCE_VALUE_BYTES.hex())
         FORCE_VALUE = int.from_bytes(FORCE_VALUE_BYTES, byteorder='big')
         
            # CALIBRATION
@@ -117,34 +108,23 @@ def Loop() :
         socket.send_string(json.dumps(messageADC))
 
            # NOISE MEASUREMENT
-        if (len(adcTab)>=100):      # Calculating the noise every 100 samples
+        if (len(adcTab)>=500):      # Calculating the noise every 500 samples
             adcTab_numpy = adcTab_np = np.array(adcTab)
             noiseRMS = np.sqrt(np.mean((adcTab_numpy-adcTab_numpy.mean())**2))
-#             noiseTab = np.zeros(len(adcTab),float)
-#             adcMean = np.mean(adcTab)
-#             for index in range(0,len(adcTab)-1):
-#                noiseTab[index] = adcTab[index] - adcMean
-          
-#             noiseRMS = myNoiseRMS(noiseTab)
-            
+            adcTab.clear()
+
+            # Sending noise measurement to PlotJuggler
             messageNoise = {"Noise (NRMS)" : noiseRMS}
             socket.send_string(json.dumps(messageNoise))
-            
-#             x2data.append(currentTime)
-#             y2data.append(noiseRMS)
-#             line2.set_data(x2data, y2data)
    
-            adcTab.clear()
-        
-        
-        # CLEARING THE SYNC BYTE
+        # BYPASSING THE SYNC BYTE
         isThatTheSyncByte = ser.read(1)
         if not (isThatTheSyncByte.hex() == '31') :
             print("STOP !")
 #             debug = ser.read(16)
 #             print(debug.hex())
-#             
-#        ser.read(6*10) # Handeling only 1 sample over 50
+
+        ser.read(6) # Moving to the other force data to print
         
 
 SetUp()
