@@ -33,6 +33,7 @@ index = 0
 check = 0
 adcTab = []
 noiseTab = []
+scale = 0.981/3100 # A weigh of 100g corresponds to a adc code of 3100
 # counterTracker = 0
 
 b,a = signal.butter(1,1000/(0.5*7200),btype='low',analog=False) # Coefficients of the 1st Butterworth order (low-pass filter with fc = 1kHz)
@@ -93,6 +94,7 @@ def Loop() :
     global noiseTab
     global index
     global palData
+    global scale
     tmp = index
     startTime = time.time()
     currentTime = 0
@@ -134,9 +136,9 @@ def Loop() :
         FORCE_SIGN = (FORCE_VALUE & 0x800000) >> 23
         FORCE_VALUE_DATA = (FORCE_VALUE & 0x7FFFFF)
         if (FORCE_SIGN == 1):                                    # NEGATIVE (A2 COMPLEMENT)
-            FORCE_VALUE_CAL = (FORCE_VALUE - (1<<24))*0.981/3100
+            FORCE_VALUE_CAL = (FORCE_VALUE - (1<<24))*scale
         else:                                                    # POSITIVE
-            FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*0.981/3100
+            FORCE_VALUE_CAL = (FORCE_VALUE_DATA)*scale
 
         adcTab.append(FORCE_VALUE_CAL)
 
@@ -144,7 +146,7 @@ def Loop() :
         xdata.append(currentTime)
         ydata.append(FORCE_VALUE_CAL)
         currentTime = 0
-        
+        print(FORCE_VALUE_CAL)
            # NOISE MEASUREMENT
         if (len(adcTab)>=500):      # Calculating the noise every 500 samples
             adcTab_numpy = np.array(adcTab)
@@ -176,6 +178,23 @@ def Loop() :
     plt.subplot(2,1,2)
     plt.plot(xdata,ydata_filtered)
     plt.title('EVM signal with numerical filter')
+    plt.show()
+    
+    # FFT
+    fft_values = np.fft.fft(ydata_filtered)
+    N = len(fft_values) # signal length i.e number of points of the FFT
+    frequencies = np.fft.fftfreq(N,1/7200)
+    fft_values = np.abs(fft_values[:N // 2])
+    frequencies = frequencies[:N // 2]
+    
+    plt.figure()
+    plt.plot(frequencies, fft_values)
+    plt.xscale('log')
+    plt.title('FFT of the EVM signal')
+    plt.xlabel('Fréquence (Hz)')
+    plt.xlim(10,10000)
+    plt.ylabel('Amplitude')
+    plt.ylim(-100,2500)
     plt.show()
     
 
