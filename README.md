@@ -2,7 +2,7 @@
 
 Electronics development to acquire and process force measurements produced by an actuator in order to achieve torque control.
 
-Here you will find the technical review : ![Technical Review](./TechnicalReview.pdf)
+Here you will find the technical review : ![Technical Review](./TechnicalReview.pdf) and the poster here : ![Poster](./CAZAUX_JB_POSTER.pdf)
 
 Files sumarry :  
    ![ADS1235EVM.kicad_sch](./ADS1235EVM.kicad_sch)   KiCAD Schematic of our own acquisition PCB  
