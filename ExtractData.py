@@ -146,7 +146,7 @@ def Loop() :
         xdata.append(currentTime)
         ydata.append(FORCE_VALUE_CAL)
         currentTime = 0
-        print(FORCE_VALUE_CAL)
+        
            # NOISE MEASUREMENT
         if (len(adcTab)>=500):      # Calculating the noise every 500 samples
             adcTab_numpy = np.array(adcTab)
